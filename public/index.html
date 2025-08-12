@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arduino Fire Prevention Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'vercel-black': '#000000',
+                        'vercel-gray': '#111111',
+                        'vercel-light-gray': '#333333',
+                        'vercel-border': '#333333',
+                        'vercel-text': '#ffffff',
+                        'vercel-text-secondary': '#888888',
+                        'vercel-blue': '#0070f3',
+                        'vercel-green': '#0070f3',
+                        'vercel-red': '#ff0000',
+                        'vercel-yellow': '#f5a623'
+                    },
+                    animation: {
+                        'pulse-slow': 'pulse 2s infinite',
+                        'fade-in': 'fadeIn 0.5s ease-in-out',
+                        'slide-up': 'slideUp 0.3s ease-out',
+                        'bounce-in': 'bounceIn 0.6s ease-out'
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' }
+                        },
+                        slideUp: {
+                            '0%': { transform: 'translateY(10px)', opacity: '0' },
+                            '100%': { transform: 'translateY(0)', opacity: '1' }
+                        },
+                        bounceIn: {
+                            '0%': { transform: 'scale(0.3)', opacity: '0' },
+                            '50%': { transform: 'scale(1.05)' },
+                            '70%': { transform: 'scale(0.9)' },
+                            '100%': { transform: 'scale(1)', opacity: '1' }
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="min-h-screen bg-vercel-black text-vercel-text font-sans">
+    <!-- Background Pattern -->
+    <div class="fixed inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(0,112,243,0.1),transparent_50%)]"></div>
+    
+    <div class="relative z-10 min-h-screen flex flex-col">
+        <!-- Header -->
+        <header class="border-b border-vercel-border bg-vercel-black/50 backdrop-blur-xl sticky top-0 z-50">
+            <div class="max-w-7xl mx-auto px-6 py-4">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-8 h-8 bg-black  rounded-lg flex items-center justify-center">
+                            <i class="fas fa-fire-extinguisher text-white text-sm"></i>
+                        </div>
+                        <h1 class="text-xl font-semibold">Fire Prevention Dashboard</h1>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <!-- Connection Status -->
+                        <div class="flex items-center space-x-2">
+                            <div id="statusIndicator" class="w-2 h-2 rounded-full bg-gray-500 animate-pulse"></div>
+                            <span id="statusText" class="text-sm text-vercel-text-secondary">Connecting...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="flex-1 max-w-7xl mx-auto px-6 py-8">
+            <!-- Stats Grid -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <!-- Flame Sensor -->
+                <div class="group bg-vercel-gray border border-vercel-border rounded-xl p-6 hover:border-vercel-blue/50 transition-all duration-300 animate-fade-in">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-10 h-10 bg-black  rounded-lg flex items-center justify-center">
+                                <i class="fas fa-fire text-white"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-medium text-vercel-text">Flame Sensor</h3>
+                                <p class="text-sm text-vercel-text-secondary">Fire detection</p>
+                            </div>
+                        </div>
+                        <div class="opacity-0 group-hover:opacity-100 transition-opacity">
+                            <i class="fas fa-chevron-right text-vercel-text-secondary"></i>
+                        </div>
+                    </div>
+                    <div class="flex items-baseline space-x-2">
+                        <span id="flameValue" class="text-2xl font-bold text-vercel-text">-</span>
+                        <span class="text-sm text-vercel-text-secondary">status</span>
+                    </div>
+                </div>
+
+                <!-- Gas Sensor -->
+                <div class="group bg-vercel-gray border border-vercel-border rounded-xl p-6 hover:border-vercel-blue/50 transition-all duration-300 animate-fade-in" style="animation-delay: 0.1s;">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-10 h-10 bg-black rounded-lg flex items-center justify-center">
+                                <i class="fas fa-wind text-white"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-medium text-vercel-text">Gas Sensor</h3>
+                                <p class="text-sm text-vercel-text-secondary">Air quality</p>
+                            </div>
+                        </div>
+                        <div class="opacity-0 group-hover:opacity-100 transition-opacity">
+                            <i class="fas fa-chevron-right text-vercel-text-secondary"></i>
+                        </div>
+                    </div>
+                    <div class="flex items-baseline space-x-2">
+                        <span id="gasValue" class="text-2xl font-bold text-vercel-text">-</span>
+                        <span class="text-sm text-vercel-text-secondary">ppm</span>
+                    </div>
+                </div>
+
+                <!-- Motion Sensor -->
+                <div class="group bg-vercel-gray border border-vercel-border rounded-xl p-6 hover:border-vercel-blue/50 transition-all duration-300 animate-fade-in" style="animation-delay: 0.2s;">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-10 h-10 bg-blackrounded-lg flex items-center justify-center">
+                                <i class="fas fa-running text-white"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-medium text-vercel-text">Motion Sensor</h3>
+                                <p class="text-sm text-vercel-text-secondary">Movement detection</p>
+                            </div>
+                        </div>
+                        <div class="opacity-0 group-hover:opacity-100 transition-opacity">
+                            <i class="fas fa-chevron-right text-vercel-text-secondary"></i>
+                        </div>
+                    </div>
+                    <div class="flex items-baseline space-x-2">
+                        <span id="motionValue" class="text-2xl font-bold text-vercel-text">-</span>
+                        <span class="text-sm text-vercel-text-secondary">status</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Charts Section -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                <!-- Gas Level Chart -->
+                <div class="bg-vercel-gray border border-vercel-border rounded-xl p-6 animate-fade-in" style="animation-delay: 0.3s;">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-lg font-medium text-vercel-text">Gas Level Trend</h3>
+                        <div class="flex items-center space-x-2">
+                            <span class="text-sm text-vercel-text-secondary">Last 30 readings</span>
+                        </div>
+                    </div>
+                    <div class="h-64">
+                        <canvas id="gasChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- System Activity Chart -->
+                <div class="bg-vercel-gray border border-vercel-border rounded-xl p-6 animate-fade-in" style="animation-delay: 0.4s;">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-lg font-medium text-vercel-text">System Activity</h3>
+                        <div class="flex items-center space-x-2">
+                            <span class="text-sm text-vercel-text-secondary">Events per hour</span>
+                        </div>
+                    </div>
+                    <div class="h-64">
+                        <canvas id="activityChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Alert History & System Status -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Alert History -->
+                <div class="lg:col-span-2 bg-vercel-gray border border-vercel-border rounded-xl p-6 animate-fade-in" style="animation-delay: 0.5s;">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-lg font-medium text-vercel-text">Alert History</h3>
+                        <button id="clearAlertsBtn" class="text-sm text-vercel-blue hover:text-vercel-blue/80 transition-colors">
+                            Clear All
+                        </button>
+                    </div>
+                    <div id="alertHistory" class="space-y-3 max-h-64 overflow-y-auto">
+                        <div class="text-center text-vercel-text-secondary py-8">
+                            <i class="fas fa-bell text-2xl mb-2"></i>
+                            <p>No alerts yet</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- System Status -->
+                <div class="bg-vercel-gray border border-vercel-border rounded-xl p-6 animate-fade-in" style="animation-delay: 0.6s;">
+                    <h3 class="text-lg font-medium text-vercel-text mb-4">System Status</h3>
+                    <div class="space-y-4">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center space-x-2">
+                                <div id="statusIndicatorLarge" class="w-3 h-3 rounded-full bg-gray-500 animate-pulse"></div>
+                                <span id="statusTextLarge" class="text-sm text-vercel-text-secondary">Connecting...</span>
+                            </div>
+                        </div>
+                        
+                        <div class="space-y-3">
+                            <div class="flex items-center space-x-3 p-3 bg-vercel-light-gray rounded-lg">
+                                <i class="fas fa-microchip text-vercel-blue"></i>
+                                <div>
+                                    <p class="text-sm text-vercel-text-secondary">Arduino</p>
+                                    <p class="font-medium text-vercel-text">COM7</p>
+                                </div>
+                            </div>
+                            <div class="flex items-center space-x-3 p-3 bg-vercel-light-gray rounded-lg">
+                                <i class="fas fa-server text-vercel-blue"></i>
+                                <div>
+                                    <p class="text-sm text-vercel-text-secondary">Server</p>
+                                    <p class="font-medium text-vercel-text">Node.js</p>
+                                </div>
+                            </div>
+                            <div class="flex items-center space-x-3 p-3 bg-vercel-light-gray rounded-lg">
+                                <i class="fas fa-bolt text-vercel-blue"></i>
+                                
+                            </div>
+                        </div>
+
+                        <!-- Settings -->
+                        <div class="pt-4 border-t border-vercel-border">
+                            <h4 class="text-sm font-medium text-vercel-text mb-3">Settings</h4>
+                            <div class="space-y-3">
+                                <div>
+                                    <label class="text-xs text-vercel-text-secondary">Gas Threshold (ppm)</label>
+                                    <input type="number" id="gasThreshold" value="400" class="w-full mt-1 bg-vercel-light-gray border border-vercel-border rounded px-3 py-2 text-vercel-text text-sm">
+                                </div>
+                                <button id="saveSettingsBtn" class="w-full bg-vercel-blue hover:bg-vercel-blue/80 text-white rounded px-3 py-2 text-sm font-medium transition-colors">
+                                    Save Settings
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="mt-8 text-center">
+                <p class="text-sm text-vercel-text-secondary">
+                    Real-time fire prevention system • Auto-reconnection enabled • Advanced monitoring
+                </p>
+            </div>
+        </main>
+    </div>
+
+    <!-- Alert Sound -->
+    <audio id="alertSound" preload="auto" volume="0.8">
+        <source src="data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuBzvLZiTYIG2m98OScTgwOUarm7blmGgU7k9n1unEiBC13yO/eizEIHWq+8+OWT" type="audio/wav">
+    </audio>
+    
+    <!-- Alternative Alert Sound -->
+    <audio id="alertSound2" preload="auto" volume="0.8">
+        <source src="data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuBzvLZiTYIG2m98OScTgwOUarm7blmGgU7k9n1unEiBC13yO/eizEIHWq+8+OWT" type="audio/wav">
+    </audio>
+
+    <script>
+        const socket = io();
+        const statusIndicator = document.getElementById('statusIndicator');
+        const statusText = document.getElementById('statusText');
+        const statusIndicatorLarge = document.getElementById('statusIndicatorLarge');
+        const statusTextLarge = document.getElementById('statusTextLarge');
+        const flameValue = document.getElementById('flameValue');
+        const gasValue = document.getElementById('gasValue');
+        const motionValue = document.getElementById('motionValue');
+
+        const alertHistory = document.getElementById('alertHistory');
+        const clearAlertsBtn = document.getElementById('clearAlertsBtn');
+        const gasThreshold = document.getElementById('gasThreshold');
+        const saveSettingsBtn = document.getElementById('saveSettingsBtn');
+        const alertSound = document.getElementById('alertSound');
+        const alertSound2 = document.getElementById('alertSound2');
+        
+        // Function to play alert sound using Web Audio API
+        let audioContext = null;
+        
+        function playAlertSound() {
+            try {
+                // Initialize audio context on first use
+                if (!audioContext) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                
+                // Resume audio context if suspended
+                if (audioContext.state === 'suspended') {
+                    audioContext.resume();
+                }
+                
+                // Create oscillator for beep sound
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                // Set frequency and volume
+                oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+                gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+                
+                // Create a pattern: beep-beep-beep
+                oscillator.start(audioContext.currentTime);
+                oscillator.stop(audioContext.currentTime + 0.2);
+                
+                setTimeout(() => {
+                    const oscillator2 = audioContext.createOscillator();
+                    const gainNode2 = audioContext.createGain();
+                    
+                    oscillator2.connect(gainNode2);
+                    gainNode2.connect(audioContext.destination);
+                    
+                    oscillator2.frequency.setValueAtTime(800, audioContext.currentTime);
+                    gainNode2.gain.setValueAtTime(0.3, audioContext.currentTime);
+                    
+                    oscillator2.start(audioContext.currentTime);
+                    oscillator2.stop(audioContext.currentTime + 0.2);
+                }, 250);
+                
+                setTimeout(() => {
+                    const oscillator3 = audioContext.createOscillator();
+                    const gainNode3 = audioContext.createGain();
+                    
+                    oscillator3.connect(gainNode3);
+                    gainNode3.connect(audioContext.destination);
+                    
+                    oscillator3.frequency.setValueAtTime(800, audioContext.currentTime);
+                    gainNode3.gain.setValueAtTime(0.3, audioContext.currentTime);
+                    
+                    oscillator3.start(audioContext.currentTime);
+                    oscillator3.stop(audioContext.currentTime + 0.2);
+                }, 500);
+                
+                console.log('Alert beep sound played successfully');
+                
+            } catch (error) {
+                console.log('Sound play failed:', error);
+                // Try to initialize audio context on user interaction
+                if (error.name === 'NotAllowedError') {
+                    console.log('Audio context needs user interaction');
+                }
+            }
+        }
+
+        // Chart data
+        let gasChartData = {
+            labels: [],
+            datasets: [{
+                label: 'Gas Level (ppm)',
+                data: [],
+                borderColor: '#0070f3',
+                backgroundColor: 'rgba(0, 112, 243, 0.1)',
+                tension: 0.4,
+                fill: true
+            }]
+        };
+
+        let activityChartData = {
+            labels: ['Flame', 'Gas', 'Motion'],
+            datasets: [{
+                label: 'Events',
+                data: [0, 0, 0],
+                backgroundColor: [
+                    'rgba(255, 99, 132, 0.8)',
+                    'rgba(54, 162, 235, 0.8)',
+                    'rgba(75, 192, 192, 0.8)'
+                ],
+                borderWidth: 0
+            }]
+        };
+
+        // Initialize charts
+        const gasChart = new Chart(document.getElementById('gasChart'), {
+            type: 'line',
+            data: gasChartData,
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: '#ffffff'
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        ticks: { color: '#888888' },
+                        grid: { color: '#333333' }
+                    },
+                    y: {
+                        ticks: { color: '#888888' },
+                        grid: { color: '#333333' }
+                    }
+                }
+            }
+        });
+
+        const activityChart = new Chart(document.getElementById('activityChart'), {
+            type: 'doughnut',
+            data: activityChartData,
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            color: '#ffffff'
+                        }
+                    }
+                }
+            }
+        });
+
+        // Alert history
+        let alerts = [];
+        let eventCounts = { flame: 0, gas: 0, motion: 0 };
+        let lastMotionState = true; // Track previous motion state (true = safe, false = detected)
+
+        function addAlert(message, type = 'info') {
+            const alert = {
+                id: Date.now(),
+                message,
+                type,
+                timestamp: new Date().toLocaleTimeString()
+            };
+            
+            alerts.unshift(alert);
+            if (alerts.length > 50) alerts.pop(); // Keep last 50 alerts
+            
+            updateAlertHistory();
+            
+            // Play sound for hazard alerts
+            if (type === 'hazard') {
+                playAlertSound();
+            }
+        }
+
+        function updateAlertHistory() {
+            if (alerts.length === 0) {
+                alertHistory.innerHTML = `
+                    <div class="text-center text-vercel-text-secondary py-8">
+                        <i class="fas fa-bell text-2xl mb-2"></i>
+                        <p>No alerts yet</p>
+                    </div>
+                `;
+                return;
+            }
+
+            alertHistory.innerHTML = alerts.map(alert => `
+                <div class="flex items-start space-x-3 p-3 bg-vercel-light-gray rounded-lg animate-bounce-in">
+                    <div class="flex-shrink-0 w-2 h-2 rounded-full mt-2 ${
+                        alert.type === 'hazard' ? 'bg-red-500' : 
+                        alert.type === 'warning' ? 'bg-yellow-500' : 'bg-blue-500'
+                    }"></div>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm text-vercel-text">${alert.message}</p>
+                        <p class="text-xs text-vercel-text-secondary mt-1">${alert.timestamp}</p>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function updateConnectionStatus(connected) {
+            const statusElements = [statusIndicator, statusIndicatorLarge];
+            const textElements = [statusText, statusTextLarge];
+            
+            statusElements.forEach(element => {
+                if (connected) {
+                    element.className = 'w-3 h-3 rounded-full bg-vercel-green animate-pulse';
+                } else {
+                    element.className = 'w-3 h-3 rounded-full bg-vercel-red animate-pulse';
+                }
+            });
+            
+            textElements.forEach(element => {
+                element.textContent = connected ? 'Connected to Arduino' : 'Not connected to Arduino';
+                element.className = connected ? 'text-sm text-vercel-text-secondary' : 'text-sm text-vercel-red';
+            });
+
+            if (!connected) {
+                flameValue.textContent = '-';
+                gasValue.textContent = '-';
+                motionValue.textContent = '-';
+            }
+        }
+
+        function updateSensorValue(element, value, isBoolean = false) {
+            if (isBoolean) {
+                // Invert the motion sensor display logic
+                if (element === motionValue) {
+                    element.textContent = value ? 'Safe' : 'DETECTED';
+                    element.className = value ? 'text-2xl font-bold text-vercel-text' : 'text-2xl font-bold text-vercel-red';
+                } else {
+                    // Keep flame sensor logic as is
+                    element.textContent = value ? 'DETECTED' : 'Safe';
+                    element.className = value ? 'text-2xl font-bold text-vercel-red' : 'text-2xl font-bold text-vercel-text';
+                }
+            } else {
+                // Special handling for gas sensor
+                if (element === gasValue) {
+                    if (value >= 500) {
+                        element.textContent = `GAS DETECTED (${value} ppm)`;
+                        element.className = 'text-2xl font-bold text-vercel-red';
+                    } else {
+                        element.textContent = value;
+                        element.className = 'text-2xl font-bold text-vercel-text';
+                    }
+                } else {
+                    element.textContent = value;
+                    element.className = 'text-2xl font-bold text-vercel-text';
+                }
+            }
+        }
+
+        function updateCharts(data) {
+            // Update gas chart
+            const now = new Date().toLocaleTimeString();
+            gasChartData.labels.push(now);
+            gasChartData.datasets[0].data.push(data.gas);
+            
+            if (gasChartData.labels.length > 30) {
+                gasChartData.labels.shift();
+                gasChartData.datasets[0].data.shift();
+            }
+            
+            gasChart.update('none');
+
+            // Update activity chart based on events
+            if (data.flame) eventCounts.flame++;
+            if (data.gas > parseInt(gasThreshold.value)) eventCounts.gas++;
+            if (!data.motion) eventCounts.motion++; // Count when motion is detected (false - inverted logic)
+            
+            activityChartData.datasets[0].data = [
+                eventCounts.flame,
+                eventCounts.gas,
+                eventCounts.motion
+            ];
+            
+            activityChart.update('none');
+        }
+
+
+
+        clearAlertsBtn.addEventListener('click', () => {
+            alerts = [];
+            updateAlertHistory();
+        });
+
+        saveSettingsBtn.addEventListener('click', () => {
+            const threshold = gasThreshold.value;
+            addAlert(`Gas threshold updated to ${threshold} ppm`, 'info');
+            // You can emit this to server if needed
+            socket.emit('update_settings', { gasThreshold: threshold });
+        });
+
+        // Socket event handlers
+        socket.on('connection_status', (data) => {
+            updateConnectionStatus(data.connected && !data.demo);
+            if (data.connected && !data.demo) {
+                addAlert('Arduino connected successfully', 'info');
+            } else if (!data.connected) {
+                addAlert('Arduino disconnected', 'warning');
+            }
+        });
+
+        socket.on('sensor_data', (data) => {
+            updateSensorValue(flameValue, data.flame, true);
+            updateSensorValue(gasValue, data.gas);
+            updateSensorValue(motionValue, data.motion, true);
+            updateCharts(data);
+
+            // Check for hazards
+            if (data.flame) {
+                addAlert('🔥 FLAME DETECTED! Fire hazard detected!', 'hazard');
+                // Sound is already played by addAlert function
+            }
+            if (data.gas >= 500) {
+                addAlert(`⚠️ GAS DETECTED: ${data.gas} ppm - Hazardous gas levels!`, 'hazard');
+                // Sound is already played by addAlert function
+            } else if (data.gas > parseInt(gasThreshold.value)) {
+                addAlert(`⚠️ HIGH GAS LEVEL: ${data.gas} ppm (threshold: ${gasThreshold.value} ppm)`, 'hazard');
+            }
+            // Check motion based on UI display logic
+            const motionDisplayed = !data.motion; // UI shows "DETECTED" when data.motion is false
+            if (motionDisplayed) {
+                addAlert('👤 Motion detected in the area', 'warning');
+                // Play sound when UI shows "DETECTED"
+                playAlertSound();
+            }
+        });
+
+        socket.on('hazard_alert', (data) => {
+            addAlert(data.message, 'hazard');
+        });
+
+
+
+        socket.on('disconnect', () => {
+            updateConnectionStatus(false);
+            addAlert('Dashboard disconnected from server', 'warning');
+        });
+
+        // Initialize
+        addAlert('Dashboard loaded successfully', 'info');
+        
+        // Initialize audio context on first user interaction
+        document.addEventListener('click', function() {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                console.log('Audio context initialized on user interaction');
+            }
+        }, { once: true });
+        
+        // Test sound button (for debugging)
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 't' || e.key === 'T') {
+                console.log('Test sound triggered by T key');
+                playAlertSound();
+            }
+        });
+    </script>
+</body>
+</html> 
