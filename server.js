@@ -58,7 +58,14 @@ async function connectToArduino() {
         parser = serialPort.pipe(new ReadlineParser({ delimiter: '\r\n' }));
         
         parser.on('data', (data) => {
-          console.log('Arduino data:', data);
+          console.log('📥 Raw Arduino data:', data);
+          console.log('📏 Data length:', data.length);
+          console.log('🔍 Data includes checks:');
+          console.log('  - Mode:', data.includes('Mode:'));
+          console.log('  - Relay:', data.includes('Relay:'));
+          console.log('  - Flame:', data.includes('Flame:'));
+          console.log('  - Gas:', data.includes('Gas:'));
+          console.log('  - Motion:', data.includes('Motion:'));
           parseArduinoData(data);
         });
         
@@ -74,7 +81,13 @@ async function connectToArduino() {
         
         serialPort.on('open', () => {
           console.log('✅ Serial port opened successfully!');
-          io.emit('connection_status', { connected: true });
+          
+          // Stop demo mode if it's running
+          if (isDemoMode) {
+            stopDemoMode();
+          }
+          
+          io.emit('connection_status', { connected: true, demo: false });
           
           // Stop reconnection attempts when successfully connected
           stopAutoReconnect();
@@ -140,7 +153,14 @@ function tryAlternativePorts(ports, failedPort) {
       parser = serialPort.pipe(new ReadlineParser({ delimiter: '\r\n' }));
       
       parser.on('data', (data) => {
-        console.log('Arduino data:', data);
+        console.log('📥 Raw Arduino data (alt port):', data);
+        console.log('📏 Data length:', data.length);
+        console.log('🔍 Data includes checks:');
+        console.log('  - Mode:', data.includes('Mode:'));
+        console.log('  - Relay:', data.includes('Relay:'));
+        console.log('  - Flame:', data.includes('Flame:'));
+        console.log('  - Gas:', data.includes('Gas:'));
+        console.log('  - Motion:', data.includes('Motion:'));
         parseArduinoData(data);
       });
       
@@ -151,7 +171,13 @@ function tryAlternativePorts(ports, failedPort) {
       
       serialPort.on('open', () => {
         console.log(`Successfully connected to ${nextPort.path}!`);
-        io.emit('connection_status', { connected: true });
+        
+        // Stop demo mode if it's running
+        if (isDemoMode) {
+          stopDemoMode();
+        }
+        
+        io.emit('connection_status', { connected: true, demo: false });
       });
       
       serialPort.open((err) => {
@@ -173,7 +199,32 @@ function parseArduinoData(data) {
     console.log('Received from Arduino:', data);
     
     // Parse sensor data from Arduino output
-    if (data.includes('Flame:') && data.includes('Gas:') && data.includes('Motion:')) {
+    // Arduino outputs: "Mode: AUTO | Relay: OFF | Flame: No | Gas: 123 | Motion: No"
+    if (data.includes('Mode:') && data.includes('Relay:') && data.includes('Flame:') && data.includes('Gas:') && data.includes('Motion:')) {
+      const flameMatch = data.match(/Flame:\s*(YES|No)/);
+      const gasMatch = data.match(/Gas:\s*(\d+)/);
+      const motionMatch = data.match(/Motion:\s*(YES|No)/);
+      const relayMatch = data.match(/Relay:\s*(ON|OFF)/);
+      const modeMatch = data.match(/Mode:\s*(AUTO|MANUAL)/);
+      
+      if (flameMatch && gasMatch && motionMatch) {
+        const sensorData = {
+          flame: flameMatch[1] === 'YES',
+          gas: parseInt(gasMatch[1]),
+          motion: motionMatch[1] === 'YES', // "YES" means motion detected (true)
+          relay: relayMatch ? relayMatch[1] === 'ON' : false,
+          mode: modeMatch ? modeMatch[1] : 'AUTO',
+          timestamp: new Date().toISOString(),
+          source: 'arduino' // Mark as real Arduino data
+        };
+        
+        console.log('✅ Parsed Arduino sensor data:', sensorData);
+        io.emit('sensor_data', sensorData);
+      }
+    }
+    
+    // Also handle old format for backward compatibility
+    else if (data.includes('Flame:') && data.includes('Gas:') && data.includes('Motion:')) {
       const flameMatch = data.match(/Flame:\s*(DETECTED|Safe)/);
       const gasMatch = data.match(/Gas:\s*(\d+)/);
       const motionMatch = data.match(/Motion:\s*(DETECTED|None)/);
@@ -182,12 +233,44 @@ function parseArduinoData(data) {
         const sensorData = {
           flame: flameMatch[1] === 'DETECTED',
           gas: parseInt(gasMatch[1]),
-          motion: motionMatch[1] === 'DETECTED', // "DETECTED" means motion detected (true)
-          timestamp: new Date().toISOString()
+          motion: motionMatch[1] === 'DETECTED',
+          timestamp: new Date().toISOString(),
+          source: 'arduino_legacy' // Mark as legacy Arduino data
         };
         
-        console.log('Parsed sensor data:', sensorData);
+        console.log('✅ Parsed sensor data (legacy format):', sensorData);
         io.emit('sensor_data', sensorData);
+      }
+    }
+    
+    // Fallback parsing - try to extract any numeric values and sensor mentions
+    else {
+      console.log('🔄 Trying fallback parsing...');
+      
+      // Try to extract gas value (any number after "Gas")
+      const gasMatch = data.match(/Gas[:\s]*(\d+)/i);
+      
+      // Try to extract flame status
+      const flameMatch = data.match(/Flame[:\s]*(YES|No|DETECTED|Safe|true|false)/i);
+      
+      // Try to extract motion status  
+      const motionMatch = data.match(/Motion[:\s]*(YES|No|DETECTED|None|true|false)/i);
+      
+      if (gasMatch || flameMatch || motionMatch) {
+        console.log('✅ Fallback parsing found sensor data');
+        
+        const sensorData = {
+          flame: flameMatch ? ['YES', 'DETECTED', 'true'].includes(flameMatch[1]) : false,
+          gas: gasMatch ? parseInt(gasMatch[1]) : 0,
+          motion: motionMatch ? ['YES', 'DETECTED', 'true'].includes(motionMatch[1]) : false,
+          timestamp: new Date().toISOString(),
+          source: 'arduino_fallback' // Mark as fallback parsed data
+        };
+        
+        console.log('⚠️ Parsed sensor data (fallback):', sensorData);
+        io.emit('sensor_data', sensorData);
+      } else {
+        console.log('⚠️ Could not parse sensor data from:', data);
       }
     }
     
@@ -199,7 +282,35 @@ function parseArduinoData(data) {
       });
     }
     
-    // Parse IR control messages
+    // Parse IR control messages - Updated for new Arduino format
+    if (data.includes('📡 IR Command:')) {
+      io.emit('ir_control', {
+        message: data,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    // Parse mode changes
+    if (data.includes('🤖 Auto Mode Activated') || data.includes('🔧 Manual Mode Activated')) {
+      const isManual = data.includes('Manual Mode');
+      io.emit('mode_change', {
+        mode: isManual ? 'MANUAL' : 'AUTO',
+        message: data,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    // Parse relay control messages
+    if (data.includes('🔊 Relay ON') || data.includes('🔇 Relay OFF')) {
+      const isOn = data.includes('Relay ON');
+      io.emit('relay_control_status', {
+        action: isOn ? 'ON' : 'OFF',
+        message: data,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    // Legacy IR control parsing
     if (data.includes('Manual ON via IR.') || data.includes('Manual OFF via IR.')) {
       const isOn = data.includes('Manual ON via IR.');
       io.emit('ir_control', {
@@ -310,13 +421,13 @@ server.listen(PORT, () => {
   // Try to connect to Arduino on startup
   setTimeout(connectToArduino, 1000);
   
-  // Start demo mode if no Arduino is connected after 5 seconds
+  // Start demo mode if no Arduino is connected after 10 seconds (increased delay)
   setTimeout(() => {
     if (!serialPort || !serialPort.isOpen) {
-      console.log('No Arduino connected. Starting demo mode...');
+      console.log('No Arduino connected after 10 seconds. Starting demo mode...');
       startDemoMode();
     }
-  }, 5000);
+  }, 10000);
   
   // Connection health check every 10 seconds
   setInterval(() => {
@@ -328,17 +439,31 @@ server.listen(PORT, () => {
 });
 
 // Demo mode for testing without Arduino
+let demoInterval;
+let isDemoMode = false;
+
 function startDemoMode() {
-  console.log('Demo mode: Simulating sensor data...');
+  if (isDemoMode) return; // Prevent multiple demo modes
   
-  setInterval(() => {
+  console.log('Demo mode: Simulating sensor data...');
+  isDemoMode = true;
+  
+  demoInterval = setInterval(() => {
+    // Stop demo if Arduino connects
+    if (serialPort && serialPort.isOpen) {
+      stopDemoMode();
+      return;
+    }
+    
     const demoData = {
       flame: Math.random() > 0.95, // 5% chance of flame
       gas: Math.floor(Math.random() * 600) + 100, // Random gas value 100-700
       motion: Math.random() > 0.8, // 20% chance of motion
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      source: 'demo' // Mark as demo data
     };
     
+    console.log('📊 Demo data (random):', demoData);
     io.emit('sensor_data', demoData);
     
     // Simulate hazard alerts
@@ -360,6 +485,15 @@ function startDemoMode() {
   }, 2000); // Update every 2 seconds
   
   io.emit('connection_status', { connected: true, demo: true });
+}
+
+function stopDemoMode() {
+  if (demoInterval) {
+    clearInterval(demoInterval);
+    demoInterval = null;
+  }
+  isDemoMode = false;
+  console.log('✅ Demo mode stopped - Arduino connected');
 }
 
 // Auto-reconnection functions

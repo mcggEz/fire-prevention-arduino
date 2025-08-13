@@ -423,7 +423,7 @@
         // Alert history
         let alerts = [];
         let eventCounts = { flame: 0, gas: 0, motion: 0 };
-        let lastMotionState = true; // Track previous motion state (true = safe, false = detected)
+        let lastMotionState = false; // Track previous motion state (false = safe, true = detected)
 
         function addAlert(message, type = 'info') {
             const alert = {
@@ -495,10 +495,10 @@
 
         function updateSensorValue(element, value, isBoolean = false) {
             if (isBoolean) {
-                // Invert the motion sensor display logic
+                // Motion sensor display logic - Show "Safe" when false, "DETECTED" when true
                 if (element === motionValue) {
-                    element.textContent = value ? 'Safe' : 'DETECTED';
-                    element.className = value ? 'text-2xl font-bold text-vercel-text' : 'text-2xl font-bold text-vercel-red';
+                    element.textContent = value === false ? 'Safe' : 'DETECTED';
+                    element.className = value === false ? 'text-2xl font-bold text-vercel-text' : 'text-2xl font-bold text-vercel-red';
                 } else {
                     // Keep flame sensor logic as is
                     element.textContent = value ? 'DETECTED' : 'Safe';
@@ -535,9 +535,9 @@
             gasChart.update('none');
 
             // Update activity chart based on events
-            if (data.flame) eventCounts.flame++;
+            if (data.flame === true) eventCounts.flame++;
             if (data.gas > parseInt(gasThreshold.value)) eventCounts.gas++;
-            if (!data.motion) eventCounts.motion++; // Count when motion is detected (false - inverted logic)
+            if (data.motion === true) eventCounts.motion++; // Count when motion is detected (true)
             
             activityChartData.datasets[0].data = [
                 eventCounts.flame,
@@ -567,12 +567,17 @@
             updateConnectionStatus(data.connected && !data.demo);
             if (data.connected && !data.demo) {
                 addAlert('Arduino connected successfully', 'info');
+            } else if (data.connected && data.demo) {
+                addAlert('⚠️ Demo mode active - No Arduino connected', 'warning');
             } else if (!data.connected) {
                 addAlert('Arduino disconnected', 'warning');
             }
         });
 
         socket.on('sensor_data', (data) => {
+            console.log('📥 Received sensor data:', data);
+            console.log('📍 Data source:', data.source || 'unknown');
+            
             updateSensorValue(flameValue, data.flame, true);
             updateSensorValue(gasValue, data.gas);
             updateSensorValue(motionValue, data.motion, true);
@@ -590,7 +595,7 @@
                 addAlert(`⚠️ HIGH GAS LEVEL: ${data.gas} ppm (threshold: ${gasThreshold.value} ppm)`, 'hazard');
             }
             // Check motion based on UI display logic
-            const motionDisplayed = !data.motion; // UI shows "DETECTED" when data.motion is false
+            const motionDisplayed = data.motion === true; // UI shows "DETECTED" when data.motion is true
             if (motionDisplayed) {
                 addAlert('👤 Motion detected in the area', 'warning');
                 // Play sound when UI shows "DETECTED"
