@@ -1,4 +1,4 @@
-<img width="2048" height="1152" alt="image" src="https://github.com/user-attachments/assets/12ff3aaa-d8e4-40d2-9d52-b3c9b64fa7f9" /># 🔥 Arduino Fire Prevention Dashboard
+# 🔥 Arduino Fire Prevention Dashboard
 
 A comprehensive real-time fire prevention and monitoring system built with Arduino, Node.js, and modern web technologies. This system monitors flame, gas, and motion sensors to provide early warning and automated response capabilities.
 
