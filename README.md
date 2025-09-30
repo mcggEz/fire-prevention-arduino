@@ -1,4 +1,4 @@
-# 🔥 Arduino Fire Prevention Dashboard
+# Arduino Fire Prevention Dashboard
 
 A comprehensive real-time fire prevention and monitoring system built with Arduino, Node.js, and modern web technologies. This system monitors flame, gas, and motion sensors to provide early warning and automated response capabilities.
 
